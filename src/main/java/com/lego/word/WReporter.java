@@ -1,57 +1,32 @@
-package com.legao.word.poi;
+package com.lego.word;
 
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.io.OutputStream;
-import java.math.BigDecimal;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.text.DecimalFormat;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
+import com.lego.word.element.WObject;
+import com.lego.word.element.WPic;
 import org.apache.commons.lang.StringUtils;
 import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
 import org.apache.poi.util.Units;
-import org.apache.poi.xwpf.usermodel.XWPFDocument;
-import org.apache.poi.xwpf.usermodel.XWPFParagraph;
-import org.apache.poi.xwpf.usermodel.XWPFRun;
-import org.apache.poi.xwpf.usermodel.XWPFTable;
-import org.apache.poi.xwpf.usermodel.XWPFTableCell;
-import org.apache.poi.xwpf.usermodel.XWPFTableRow;
-import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTFonts;
-import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTInd;
-import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTP;
-import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTPPr;
-import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTRPr;
-import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTSpacing;
-import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTc;
-import org.openxmlformats.schemas.wordprocessingml.x2006.main.CTTcPr;
+import org.apache.poi.xwpf.usermodel.*;
+import org.openxmlformats.schemas.wordprocessingml.x2006.main.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class WordReporter {
-    private static final Logger logger = LoggerFactory.getLogger(WordReporter.class);
+import java.io.*;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+public class WReporter {
+    private static final Logger logger = LoggerFactory.getLogger(WReporter.class);
 
     private String templatePath;
     private XWPFDocument doc = null;
     private FileInputStream is = null;
     private OutputStream os = null;
 
-    public WordReporter(String templatePath) throws IOException {
+    public WReporter(String templatePath) throws IOException {
         this.templatePath = templatePath;
         init();
     }
@@ -62,47 +37,44 @@ public class WordReporter {
     }
 
     /**
-     * 替换掉占位符
+     * 替换掉文档里面占位符
      *
-     * @param params
+     * @param wDoc
      * @return
      * @throws Exception
      */
-    public boolean export(Map<String, Object> params) throws Exception {
-        this.replaceInPara(doc, params);
+    public boolean export(WObject wDoc) throws Exception {
+        this.replaceInPara(doc, wDoc);
         return true;
     }
 
     /**
      * 替换掉表格中的占位符
      *
-     * @param params
+     * @param wTable
      * @param tableIndex
      * @return
      * @throws Exception
      */
-    public boolean export(Map<String, Object> params, int tableIndex) throws Exception {
-        this.replaceInTable(doc, params, tableIndex);
+    public boolean export(WObject wTable, int tableIndex) throws Exception {
+        this.replaceInTable(doc, wTable, tableIndex);
         return true;
     }
 
     /**
      * 循环生成表格
      *
-     * @param params
+     * @param wTables
      * @param tableIndex
      * @return
      * @throws Exception
      */
-    public boolean export(List<List<Map<String, Object>>> params, int tableIndex, int towIndex) throws Exception {
+    public boolean export(List<WObject> wTables, int tableIndex, int towIndex) throws Exception {
 
-        return export(params, tableIndex, towIndex, false);
-    }
-
-    public boolean export(List<List<Map<String, Object>>> params, int tableIndex, int towIndex, Boolean hasTotalRow) throws Exception {
-        this.insertValueToTable(doc, params, tableIndex, towIndex, hasTotalRow);
+        this.insertValueToTable(doc, wTables, tableIndex, towIndex);
         return true;
     }
+
 
     /**
      * 导出图片 todo
@@ -112,20 +84,11 @@ public class WordReporter {
      * @throws Exception
      */
     public boolean exportImg(Map<String, Object> params) throws Exception {
+        doc.getParagraphs().get(0);
 
         return true;
     }
-    /**
-     * 导出变量 todo
-     *
-     * @param params
-     * @return
-     * @throws Exception
-     */
-    public boolean exportParams(Map<String, Object> params) throws Exception {
 
-        return true;
-    }
 
     /**
      * 生成word文档
@@ -146,10 +109,10 @@ public class WordReporter {
      * 替换表格里面的变量
      *
      * @param doc    要替换的文档
-     * @param params 参数
+     * @param wTable 参数
      * @throws Exception
      */
-    private void replaceInTable(XWPFDocument doc, Map<String, Object> params, int tableIndex) throws Exception {
+    private void replaceInTable(XWPFDocument doc, WObject wTable, int tableIndex) throws Exception {
         List<XWPFTable> tableList = doc.getTables();
         if (tableList.size() <= tableIndex) {
             throw new Exception("tableIndex对应的表格不存在");
@@ -164,7 +127,7 @@ public class WordReporter {
             for (XWPFTableCell cell : cells) {
                 paras = cell.getParagraphs();
                 for (XWPFParagraph para : paras) {
-                    this.replaceInPara(para, params);
+                    this.replaceInPara(para, wTable);
                 }
             }
         }
@@ -173,29 +136,29 @@ public class WordReporter {
     /**
      * 替换段落里面的变量
      *
-     * @param doc    要替换的文档
-     * @param params 参数
+     * @param doc  要替换的文档
+     * @param wDoc 参数
      * @throws Exception
      */
-    private void replaceInPara(XWPFDocument doc, Map<String, Object> params) throws Exception {
+    private void replaceInPara(XWPFDocument doc, WObject wDoc) throws Exception {
         Iterator<XWPFParagraph> iterator = doc.getParagraphsIterator();
         XWPFParagraph para;
         while (iterator.hasNext()) {
             para = iterator.next();
-            this.replaceInPara(para, params);
+            this.replaceInPara(para, wDoc);
         }
     }
 
     /**
      * 替换段落里面的变量
      *
-     * @param para   要替换的段落
-     * @param params 参数
+     * @param para    要替换的段落
+     * @param wObject 参数
      * @throws Exception
      * @throws IOException
      * @throws InvalidFormatException
      */
-    private boolean replaceInPara(XWPFParagraph para, Map<String, Object> params) throws Exception {
+    private boolean replaceInPara(XWPFParagraph para, WObject wObject) throws Exception {
         boolean data = false;
         List<XWPFRun> runs;
         //有符合条件的占位符
@@ -211,14 +174,14 @@ public class WordReporter {
                 boolean end = runText.indexOf("}") > -1;
                 if (begin && end) {
                     tempMap.put(i, runText);
-                    fillBlock(para, params, tempMap, i);
+                    fillBlock(para, wObject, tempMap);
                     continue;
                 } else if (begin && !end) {
                     tempMap.put(i, runText);
                     continue;
                 } else if (!begin && end) {
                     tempMap.put(i, runText);
-                    fillBlock(para, params, tempMap, i);
+                    fillBlock(para, wObject, tempMap);
                     continue;
                 } else {
                     if (tempMap.size() > 0) {
@@ -247,8 +210,8 @@ public class WordReporter {
      * @throws IOException
      * @throws Exception
      */
-    private void fillBlock(XWPFParagraph para, Map<String, Object> params,
-                           Map<Integer, String> tempMap, int index)
+    private void fillBlock(XWPFParagraph para, WObject params,
+                           Map<Integer, String> tempMap)
             throws InvalidFormatException, IOException, Exception {
         Matcher matcher;
         if (tempMap != null && tempMap.size() > 0) {
@@ -269,17 +232,18 @@ public class WordReporter {
                 int picType = 0;
                 String path = null;
                 String keyText = matcher.group().substring(2, matcher.group().length() - 1);
-                Object value = params.get(keyText);
+                Object value = params.getValByKey(keyText);
                 String newRunText = "";
-                if (value instanceof String) {
-                    newRunText = matcher.replaceFirst(String.valueOf(value));
-                } else if (value instanceof Map) {//插入图片
+                if (value instanceof WPic) {
                     isPic = true;
-                    Map pic = (Map) value;
-                    width = Integer.parseInt(pic.get("width").toString());
-                    height = Integer.parseInt(pic.get("height").toString());
-                    picType = getPictureType(pic.get("type").toString());
-                    path = pic.get("path").toString();
+                    WPic wPic = (WPic) value;
+                    width = wPic.getWidth();
+                    height = wPic.getHeight();
+                    picType = getPictureType(wPic.getType());
+                    path = wPic.getUrl();
+
+                } else {//插入图片
+                    newRunText = matcher.replaceFirst(String.valueOf(value));
                 }
 
                 //模板样式
@@ -302,7 +266,6 @@ public class WordReporter {
                             //设置字体信息
                             String fontFamily = tempRun.getFontFamily();
                             int fontSize = tempRun.getFontSize();
-                            //logger.info("------------------"+fontSize);
                             for (int i = 0; i < textArr.length; i++) {
                                 if (i == 0) {
                                     tempRun.setText(textArr[0], 0);
@@ -349,11 +312,8 @@ public class WordReporter {
         return in.readObject();
     }
 
-    private void insertValueToTable(XWPFDocument doc, List<List<Map<String, Object>>> params, int tableIndex, int towIndex) throws Exception {
-        insertValueToTable(doc, params, tableIndex, towIndex, false);
-    }
 
-    private void insertValueToTable(XWPFDocument doc, List<List<Map<String, Object>>> params, int tableIndex, int towIndex, Boolean hasTotalRow) throws Exception {
+    private void insertValueToTable(XWPFDocument doc, List<WObject> wTables, int tableIndex, int towIndex) throws Exception {
         List<XWPFTable> tableList = doc.getTables();
         if (tableList.size() <= tableIndex) {
             throw new Exception("tableIndex对应的表格不存在");
@@ -376,69 +336,59 @@ public class WordReporter {
         Map<String, Object> totalMap = null;
 
 
-        for (int j = 0; j < params.size(); j++) {
-            List<Map<String, Object>> objectParams = params.get(j);
-            for (int i = 0, len = objectParams.size(); i < len; i++) {
-                Map<String, Object> map = objectParams.get(i);
-                if (map.containsKey("total")) {
-                    totalMap = new HashMap<String, Object>();
-                    totalMap.put("total", map.get("total"));
-                    continue;
-                }
-                XWPFTableRow row = table.createRow();
-                row.setHeight(tmpRow.getHeight());
-                cells = row.getTableCells();
-                // 插入的行会填充与表格第一行相同的列数
-                for (int k = 0, klen = cells.size(); k < klen; k++) {
-                    tmpCell = tmpCells.get(k);
-                    XWPFTableCell cell = cells.get(k);
-                    cellText = tmpCell.getText();
-                    if (StringUtils.isNotBlank(cellText)) {
-                        //转换为mapkey对应的字段
-                        cellTextKey = cellText.replace("$", "").replace("{", "").replace("}", "");
-                        if (map.containsKey(cellTextKey)) {
-                            Object value = map.get(cellTextKey);
+        for (int i = 0, len = wTables.size(); i < len; i++) {
+            WObject wTable = wTables.get(i);
+            XWPFTableRow row = table.createRow();
+            row.setHeight(tmpRow.getHeight());
+            cells = row.getTableCells();
+            // 插入的行会填充与表格第一行相同的列数
+            int nullValueSize = 0;
+            for (int k = 0, klen = cells.size(); k < klen; k++) {
+                tmpCell = tmpCells.get(k);
+                XWPFTableCell cell = cells.get(k);
+                cellText = tmpCell.getText();
+                if (StringUtils.isNotBlank(cellText)) {
+                    //转换为mapkey对应的字段
+                    cellTextKey = cellText.replace("$", "").replace("{", "").replace("}", "").trim();
+                    Object o = wTable.getValByKey(cellTextKey);
 
-                            if (value instanceof String) {
-                                setCellText(tmpCell, cell, String.valueOf(value));
-                            } else if (value instanceof Map) {
-                                //插入图片
-                                Map pic = (Map) value;
-                                Integer width = Integer.parseInt(pic.get("width").toString());
-                                Integer height = Integer.parseInt(pic.get("height").toString());
-                                Integer picType = getPictureType(pic.get("type").toString());
-                                String path = pic.get("path").toString();
-                                cell.getParagraphs().get(0).insertNewRun(0).addPicture(getPicStream(path), picType, "测试",Units.toEMU(width), Units.toEMU(height));
-                            }
 
+                    if (o == null) {
+                        nullValueSize = nullValueSize + 1;
+                        if (nullValueSize == cells.size()) {
+                            table.removeRow(table.getRows().size() - 1);
                         }
+                        continue;
                     }
+                    if (o instanceof WPic) {
+                        //插入图片
+                        WPic pic = (WPic) o;
+                        Integer width = pic.getWidth();
+                        Integer height = pic.getHeight();
+                        Integer picType = getPictureType(pic.getType());
+                        String path = pic.getUrl();
+                        cell.getParagraphs().get(0).insertNewRun(0).addPicture(getPicStream(path), picType, "测试", Units.toEMU(width), Units.toEMU(height));
+                    } else {
+                        setCellText(tmpCell, cell, String.valueOf(o.toString()));
+                    }
+
                 }
             }
         }
-
         // 删除模版行
-        table.removeRow(1);
-        if (hasTotalRow && totalMap != null) {
-            XWPFTableRow row = table.getRow(1);
-            XWPFTableCell cell = row.getCell(0);
-            replaceInPara(cell.getParagraphs().get(0), totalMap);
+        table.removeRow(towIndex);
 
-            table.addRow(row);
-            table.removeRow(1);
-        }
     }
+
 
     private void setCellText(XWPFTableCell tmpCell, XWPFTableCell cell,
                              String text) throws Exception {
 
         CTTc cttc2 = tmpCell.getCTTc();
         CTTcPr ctPr2 = cttc2.getTcPr();
-
         CTTc cttc = cell.getCTTc();
         CTTcPr ctPr = cttc.addNewTcPr();
-        //cell.setColor(tmpCell.getColor());
-        // cell.setVerticalAlignment(tmpCell.getVerticalAlignment());
+
         if (ctPr2.getTcW() != null) {
             ctPr.addNewTcW().setW(ctPr2.getTcW().getW());
         }
@@ -761,157 +711,101 @@ public class WordReporter {
 
 
     /**
-     * 保留小数点后两位
+     * 查找段落里面的变量
      *
-     * @param d
-     * @return
+     * @param para 要替换的段落
+     * @throws Exception
+     * @throws IOException
+     * @throws InvalidFormatException
      */
-    public static String getPoint2(Double d) {
-        DecimalFormat df = new DecimalFormat("0.00");
-        return df.format(d);
+    private Set<String> findInPara(XWPFParagraph para) throws Exception {
+        Set<String> resultSet = new HashSet<>();
+        List<XWPFRun> runs;
+        //有符合条件的占位符
+        if (this.matcher(para.getParagraphText()).find()) {
+            runs = para.getRuns();
+            String runText = new String();
+            for (int i = 0; i < runs.size(); i++) {
+                XWPFRun run = runs.get(i);
+                runText = runText + run.toString();
+            }
+            Matcher matcher = this.matcher(runText);
+            while (matcher.find()) {
+                int i = 1;
+                resultSet.add(matcher.group(i));
+                i++;
+            }
+
+        }
+
+        return resultSet;
     }
 
-    public static void main(String[] args) {
-		/*BigDecimal b=new BigDecimal("56.244555");
-		System.out.println(":"+getPoint2(b.doubleValue()));*/
 
-        Integer b = new Integer(1);
-        Integer a = 1000;
-        Integer d = 1000;
-        int c = 1;
-        System.out.println(a == d);
+    /**
+     * 查找段落里面的变量
+     *
+     * @throws Exception
+     */
+    public Set<String> findInPara() throws Exception {
+        Iterator<XWPFParagraph> iterator = doc.getParagraphsIterator();
+        Set<String> resultSet = new HashSet<>();
+        XWPFParagraph para;
+        while (iterator.hasNext()) {
+            para = iterator.next();
+            resultSet.addAll(this.findInPara(para));
+        }
+        this.close(is);
+        return resultSet;
     }
 
     /**
-     * 判断字符串是否都为数字
+     * 查找表格里面的变量
      *
-     * @param str
-     * @return
+     * @param
+     * @throws Exception
      */
-    public static boolean isNumeric(String str) {
-        Pattern pattern = Pattern.compile("[0-9]*");
-        Matcher isNum = pattern.matcher(str);
-        if (!isNum.matches()) {
-            return false;
+    private Set<String> findInTable(XWPFTable table) throws Exception {
+
+        Set<String> resultSet = new HashSet<>();
+        List<XWPFTableRow> rows;
+        List<XWPFTableCell> cells;
+        List<XWPFParagraph> paras;
+        rows = table.getRows();
+        for (XWPFTableRow row : rows) {
+            cells = row.getTableCells();
+            for (XWPFTableCell cell : cells) {
+                paras = cell.getParagraphs();
+                for (XWPFParagraph para : paras) {
+                    resultSet.addAll(this.findInPara(para));
+                }
+            }
         }
-        return true;
+        return resultSet;
     }
 
     /**
-     * 数字转换为汉语中人民币的大写<br>
+     * 查找表格里面的变量
      *
-     * @author hongten
-     * @contact hongtenzone@foxmail.com
-     * @create 2013-08-13
+     * @param tableIndex 第几找表，-1为全部
+     * @throws Exception
      */
-    public static class NumberToCN {
-        /**
-         * 汉语中数字大写
-         */
-        private static final String[] CN_UPPER_NUMBER = {"零", "壹", "贰", "叁", "肆",
-                "伍", "陆", "柒", "捌", "玖"};
-        /**
-         * 汉语中货币单位大写，这样的设计类似于占位符
-         */
-        private static final String[] CN_UPPER_MONETRAY_UNIT = {"分", "角", "元",
-                "拾", "佰", "仟", "万", "拾", "佰", "仟", "亿", "拾", "佰", "仟", "兆", "拾",
-                "佰", "仟"};
-        /**
-         * 特殊字符：整
-         */
-        private static final String CN_FULL = "整";
-        /**
-         * 特殊字符：负
-         */
-        private static final String CN_NEGATIVE = "负";
-        /**
-         * 金额的精度，默认值为2
-         */
-        private static final int MONEY_PRECISION = 2;
-        /**
-         * 特殊字符：零元整
-         */
-        private static final String CN_ZEOR_FULL = "零元" + CN_FULL;
-
-        /**
-         * 把输入的金额转换为汉语中人民币的大写
-         *
-         * @param numberOfMoney 输入的金额
-         * @return 对应的汉语大写
-         */
-        public static String number2CNMontrayUnit(BigDecimal numberOfMoney) {
-            StringBuffer sb = new StringBuffer();
-            // -1, 0, or 1 as the value of this BigDecimal is negative, zero, or
-            // positive.
-            int signum = numberOfMoney.signum();
-            // 零元整的情况
-            if (signum == 0) {
-                return CN_ZEOR_FULL;
-            }
-            //这里会进行金额的四舍五入
-            long number = numberOfMoney.movePointRight(MONEY_PRECISION)
-                    .setScale(0, 4).abs().longValue();
-            // 得到小数点后两位值
-            long scale = number % 100;
-            int numUnit = 0;
-            int numIndex = 0;
-            boolean getZero = false;
-            // 判断最后两位数，一共有四中情况：00 = 0, 01 = 1, 10, 11
-            if (!(scale > 0)) {
-                numIndex = 2;
-                number = number / 100;
-                getZero = true;
-            }
-            if ((scale > 0) && (!(scale % 10 > 0))) {
-                numIndex = 1;
-                number = number / 10;
-                getZero = true;
-            }
-            int zeroSize = 0;
-            while (true) {
-                if (number <= 0) {
-                    break;
-                }
-                // 每次获取到最后一个数
-                numUnit = (int) (number % 10);
-                if (numUnit > 0) {
-                    if ((numIndex == 9) && (zeroSize >= 3)) {
-                        sb.insert(0, CN_UPPER_MONETRAY_UNIT[6]);
-                    }
-                    if ((numIndex == 13) && (zeroSize >= 3)) {
-                        sb.insert(0, CN_UPPER_MONETRAY_UNIT[10]);
-                    }
-                    sb.insert(0, CN_UPPER_MONETRAY_UNIT[numIndex]);
-                    sb.insert(0, CN_UPPER_NUMBER[numUnit]);
-                    getZero = false;
-                    zeroSize = 0;
-                } else {
-                    ++zeroSize;
-                    if (!(getZero)) {
-                        sb.insert(0, CN_UPPER_NUMBER[numUnit]);
-                    }
-                    if (numIndex == 2) {
-                        if (number > 0) {
-                            sb.insert(0, CN_UPPER_MONETRAY_UNIT[numIndex]);
-                        }
-                    } else if (((numIndex - 2) % 4 == 0) && (number % 1000 > 0)) {
-                        sb.insert(0, CN_UPPER_MONETRAY_UNIT[numIndex]);
-                    }
-                    getZero = true;
-                }
-                // 让number每次都去掉最后一个数
-                number = number / 10;
-                ++numIndex;
-            }
-            // 如果signum == -1，则说明输入的数字为负数，就在最前面追加特殊字符：负
-            if (signum == -1) {
-                sb.insert(0, CN_NEGATIVE);
-            }
-            // 输入的数字小数点后两位为"00"的情况，则要在最后追加特殊字符：整
-            if (!(scale > 0)) {
-                sb.append(CN_FULL);
-            }
-            return sb.toString();
+    public Set<String> findInTable(Integer tableIndex) throws Exception {
+        List<XWPFTable> tableList = doc.getTables();
+        if (tableList.size() <= tableIndex) {
+            throw new Exception("tableIndex对应的表格不存在");
         }
+        Set<String> resultSet = new HashSet<>();
+        if (null == tableIndex || tableIndex == -1) {
+            for (int i = 0; i < tableList.size(); i++) {
+                resultSet.addAll(this.findInTable(tableList.get(i)));
+            }
+        } else {
+            resultSet.addAll(this.findInTable(tableList.get(tableIndex)));
+        }
+        this.close(is);
+        return resultSet;
     }
+
+
 }
